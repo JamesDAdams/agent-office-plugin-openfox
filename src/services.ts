@@ -18,7 +18,7 @@ export class OpenFoxServicesProvider implements ServicesProvider {
       const hasDevConfig = existsSync(devJsonPath);
       const devServer = await this.client.getDevServer(floor.dir);
 
-      const isRunning = devServer?.state === 'running' || devServer?.state === 'starting' || devServer?.status === 'running';
+      const isRunning = devServer?.state === 'running' || devServer?.state === 'starting' || devServer?.status === 'running' || Boolean(devServer?.port && devServer.port > 0);
 
       if (isRunning || hasDevConfig || devServer?.config || devServer?.url) {
         let port = devServer?.port || 0;
