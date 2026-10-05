@@ -1,4 +1,4 @@
-export type PluginCapability = 'floors' | 'queue' | 'services' | 'agent';
+export type PluginCapability = 'floors' | 'issues' | 'queue' | 'services' | 'agent';
 
 export interface PluginManifest {
   id: string;
@@ -43,6 +43,27 @@ export interface FloorInfo {
   waiting: number;
   people: number;
   wing: number;
+}
+
+export interface GhLabel {
+  name: string;
+  color: string;
+  description?: string;
+}
+
+export interface GhIssue {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  author: string;
+  labels: GhLabel[];
+  assignees: string[];
+  taken?: boolean;
+  createdAt: string;
+  updatedAt: string;
+  body: string;
+  comments: number;
 }
 
 export interface QueueTask {
@@ -91,6 +112,10 @@ export interface FloorProvider {
   decorateFloorInfo?(floor: FloorLike, info: FloorInfo): void;
 }
 
+export interface IssuesAdapter {
+  listIssues(floor: FloorLike): Promise<GhIssue[]>;
+}
+
 export interface QueueAdapter {
   listTasks?(floor: FloorLike): Promise<QueueTask[]>;
   onTaskCreated?(floor: FloorLike, prompt: string): Promise<void>;
@@ -109,6 +134,7 @@ export interface OfficePlugin {
   init?(ctx?: unknown): Promise<void> | void;
   shutdown?(): Promise<void> | void;
   floorProvider?: FloorProvider;
+  issuesAdapter?: IssuesAdapter;
   queueAdapter?: QueueAdapter;
   servicesProvider?: ServicesProvider;
 }

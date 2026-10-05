@@ -53,12 +53,13 @@ test('OpenFox plugin reads and sorts projects via FloorProvider', async () => {
   }
 });
 
-test('OpenFox plugin syncs tasks via QueueAdapter', async () => {
+test('OpenFox plugin maps tasks to Issues via IssuesAdapter', async () => {
   const fake = await fakeOpenFox({
     'GET /api/projects/p1/tasks': {
       tasks: [
         { id: 't1', title: 'Task 1', prompt: 'do it', status: 'todo' },
         { id: 't2', title: 'Task 2', prompt: 'in progress', status: 'in_progress', boundSessionId: 's1' },
+        { id: 't3', title: 'Task 3', prompt: 'finished task', status: 'done' },
       ],
     },
   });
@@ -66,13 +67,20 @@ test('OpenFox plugin syncs tasks via QueueAdapter', async () => {
 
   try {
     const plugin = createOpenFoxPlugin();
-    const tasks = await plugin.queueAdapter?.listTasks?.({ id: 'p1', dir: '/code/p1' } as any);
-    assert.equal(tasks?.length, 2);
-    assert.equal(tasks?.[0]?.id, 't1');
-    assert.equal(tasks?.[0]?.status, 'queued');
-    assert.equal(tasks?.[1]?.id, 't2');
-    assert.equal(tasks?.[1]?.status, 'running');
-    assert.equal(tasks?.[1]?.workerId, 's1');
+    assert.ok(plugin.issuesAdapter);
+    const issues = await plugin.issuesAdapter.listIssues({ id: 'p1', dir: '/code/p1' } as any);
+    assert.equal(issues.length, 3);
+    assert.equal(issues[0]?.title, 'Task 1');
+    assert.equal(issues[0]?.state, 'OPEN');
+    assert.equal(issues[0]?.taken, false);
+
+    assert.equal(issues[1]?.title, 'Task 2');
+    assert.equal(issues[1]?.state, 'OPEN');
+    assert.equal(issues[1]?.taken, true);
+    assert.deepEqual(issues[1]?.assignees, ['s1']);
+
+    assert.equal(issues[2]?.title, 'Task 3');
+    assert.equal(issues[2]?.state, 'CLOSED');
   } finally {
     delete process.env.OPENFOX_PORT;
     await fake.close();
