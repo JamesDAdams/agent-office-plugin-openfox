@@ -1,0 +1,20 @@
+{
+  "name": "agent-office-plugin-openfox",
+  "version": "1.0.0",
+  "description": "OpenFox plugin for Agent Office — syncs projects as floors, task queue, dev servers, and sessions",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "keywords": ["agent-office", "plugin", "openfox"]
+}
