@@ -18,18 +18,27 @@ export class OpenFoxServicesProvider implements ServicesProvider {
       const hasDevConfig = existsSync(devJsonPath);
       const devServer = await this.client.getDevServer(floor.dir);
 
-      if (devServer?.status === 'running' || hasDevConfig || devServer?.config) {
+      const isRunning = devServer?.state === 'running' || devServer?.state === 'starting' || devServer?.status === 'running';
+
+      if (isRunning || hasDevConfig || devServer?.config || devServer?.url) {
         let port = devServer?.port || 0;
-        if (!port && devServer?.url) {
+        const targetUrl = devServer?.url || devServer?.config?.url;
+        if (!port && targetUrl) {
           try {
-            const parsed = new URL(devServer.url);
+            const parsed = new URL(targetUrl);
             port = Number(parsed.port) || 0;
           } catch {
-            // ignore
+            const match = targetUrl.match(/:(\d+)/);
+            if (match && match[1]) port = Number(match[1]);
           }
         }
 
-        const isRunning = devServer?.status === 'running';
+        const stateLabel = devServer?.state === 'starting'
+          ? 'Dev Server (Starting…)'
+          : isRunning
+            ? 'Dev Server (Running)'
+            : 'Dev Server (Stopped)';
+
         list.push({
           port,
           host: 'localhost',
@@ -37,7 +46,7 @@ export class OpenFoxServicesProvider implements ServicesProvider {
           command: devServer?.command || devServer?.config?.command || 'Dev Server',
           workerId: isRunning ? 'dev-server' : 'dev-server-stopped',
           cwd: floor.dir,
-          title: isRunning ? 'Dev Server (Running)' : 'Dev Server (Stopped)',
+          title: stateLabel,
           since: 0,
         });
       }

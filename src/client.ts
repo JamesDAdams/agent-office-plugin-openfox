@@ -18,11 +18,14 @@ export interface OpenFoxTask {
 }
 
 export interface OpenFoxDevServerStatus {
-  status: 'running' | 'stopped' | 'error';
+  state?: 'off' | 'starting' | 'running' | 'stopping' | 'crashed';
+  status?: 'running' | 'stopped' | 'error';
   port?: number;
   url?: string;
   command?: string;
   config?: { command?: string; url?: string };
+  errorMessage?: string;
+  inspectProxyPort?: number | null;
   logs?: Array<{ content?: string; chunk?: string } | string>;
 }
 
