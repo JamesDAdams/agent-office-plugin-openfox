@@ -1,3 +1,5 @@
+import { parseCompactTableString, type MultiRepoDevItem } from './services.js';
+
 export interface OpenFoxProject {
   id: string;
   name: string;
@@ -85,9 +87,14 @@ export class OpenFoxClient {
   }
 
   async getProjects(): Promise<OpenFoxProject[]> {
-    const data = await this.fetchJson<{ projects?: OpenFoxProject[]; data?: OpenFoxProject[] }>('/api/projects');
+    const data = await this.fetchJson<{ projects?: unknown; data?: unknown }>('/api/projects');
     if (!data) return [];
-    return data.projects || data.data || [];
+    const raw = data.projects ?? data.data;
+    if (Array.isArray(raw)) return raw as OpenFoxProject[];
+    if (typeof raw === 'string') {
+      return parseCompactTableString<OpenFoxProject>(raw);
+    }
+    return [];
   }
 
   async createProject(name: string, workdir: string): Promise<OpenFoxProject | null> {
@@ -98,9 +105,16 @@ export class OpenFoxClient {
   }
 
   async getTasks(projectId: string): Promise<OpenFoxTask[]> {
-    const data = await this.fetchJson<{ tasks?: OpenFoxTask[]; data?: OpenFoxTask[] }>(`/api/projects/${encodeURIComponent(projectId)}/tasks`);
+    const data = await this.fetchJson<{ tasks?: unknown; data?: unknown }>(
+      `/api/projects/${encodeURIComponent(projectId)}/tasks`,
+    );
     if (!data) return [];
-    return data.tasks || data.data || [];
+    const raw = data.tasks ?? data.data;
+    if (Array.isArray(raw)) return raw as OpenFoxTask[];
+    if (typeof raw === 'string') {
+      return parseCompactTableString<OpenFoxTask>(raw);
+    }
+    return [];
   }
 
   async deleteTask(projectId: string, taskId: string): Promise<boolean> {
@@ -132,5 +146,63 @@ export class OpenFoxClient {
     );
     if (!data?.logs) return [];
     return data.logs.map((l) => (typeof l === 'string' ? l : (l.content ?? l.chunk ?? '')));
+  }
+
+  async invokePluginRpc<T = unknown>(
+    pluginId: string,
+    method: string,
+    params: Record<string, unknown> = {},
+    workdir?: string,
+  ): Promise<T | null> {
+    const res = await this.fetchJson<{ result?: T; error?: string }>(
+      `/api/plugins/${encodeURIComponent(pluginId)}/rpc/${encodeURIComponent(method)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ params, workdir }),
+      },
+    );
+    return res?.result ?? null;
+  }
+
+  async getMultiRepoServices(workdir: string): Promise<MultiRepoDevItem[] | null> {
+    const res = await this.invokePluginRpc<{
+      services: unknown;
+    }>('openfox-multirepo-plugin', 'getDevServices', {}, workdir);
+    if (!res) return null;
+    if (Array.isArray(res.services)) return res.services as MultiRepoDevItem[];
+    if (typeof res.services === 'string') {
+      return parseCompactTableString<MultiRepoDevItem>(res.services);
+    }
+    return null;
+  }
+
+  async startMultiRepoService(workdir: string, serviceName?: string): Promise<boolean> {
+    const res = await this.invokePluginRpc(
+      'openfox-multirepo-plugin',
+      'startDevService',
+      serviceName ? { name: serviceName } : {},
+      workdir,
+    );
+    return res !== null;
+  }
+
+  async stopMultiRepoService(workdir: string, serviceName?: string): Promise<boolean> {
+    const res = await this.invokePluginRpc(
+      'openfox-multirepo-plugin',
+      'stopDevService',
+      serviceName ? { name: serviceName } : {},
+      workdir,
+    );
+    return res !== null;
+  }
+
+  async getMultiRepoLogs(workdir: string, serviceName?: string): Promise<string[]> {
+    const res = await this.invokePluginRpc<{ logs?: string[] }>(
+      'openfox-multirepo-plugin',
+      'getDevServiceLogs',
+      serviceName ? { name: serviceName } : {},
+      workdir,
+    );
+    return res?.logs ?? [];
   }
 }

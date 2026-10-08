@@ -129,6 +129,104 @@ export interface ServicesProvider {
   getServiceLogs?(floor: FloorLike, serviceName?: string, lines?: number): Promise<string[]>;
 }
 
+export interface AgentEffort {
+  low: string;
+  medium: string;
+  high: string;
+  xhigh: string;
+  max: string;
+}
+
+export interface ModelOption {
+  id: string;
+  name?: string;
+  efforts?: string[];
+}
+
+export interface ModelField {
+  pick: 'list' | 'typed';
+  fixed?: readonly ModelOption[];
+  catalog?: boolean;
+  unset: string;
+  max?: number;
+  hint: string;
+  invalid?: string;
+}
+
+export interface ProviderMeta {
+  label: string;
+  name: string;
+  bin?: string;
+  validModel?: (value: unknown) => value is string;
+  invalidModel?: string;
+  models?: ModelField;
+  takesEffort?: boolean;
+  effortLabel?: string;
+  unpicked?: string;
+  usage: {
+    tracked?: boolean;
+    reports?: boolean;
+    noCost?: boolean;
+    waiting?: string;
+    note: string;
+  };
+}
+
+export interface LaunchPlan {
+  args: string[];
+  env?: Record<string, string>;
+  rotateToken?: boolean;
+  finishEnv?(env: Record<string, string>): void;
+}
+
+export interface LaunchInput {
+  args: string[];
+  prompt?: string;
+  resumeSessionId?: string;
+  cwd: string;
+  setup: unknown;
+}
+
+export interface ProviderAdapter {
+  id: string;
+  scrubEnv?: readonly string[];
+  scrubPrefixes?: readonly string[];
+  createState?(): unknown;
+  prepare?(floor: { dataDir: string; mcpScript?: string; dshProfile: string }): unknown;
+  launch(input: LaunchInput): LaunchPlan;
+  exited?(h: unknown, cwd: string): void;
+  transport?: 'pty' | 'acp';
+  signIn?: string;
+  bootHint?: string;
+  titleNoise?: RegExp;
+  freshIfResumeFails?: boolean;
+  hook?: {
+    strictJson: boolean;
+    handle(h: unknown, event: string, payload: unknown): boolean;
+  };
+  hooksAs?: string;
+  screen?: {
+    progress?: boolean;
+    blocked?(text: string, early: boolean): string | undefined;
+  };
+  usage?: {
+    transcript?: boolean;
+    persisted?: boolean;
+    scan?(h: unknown): void;
+    scanOnExit?: boolean;
+    locate?(h: unknown, cwd: string, env: Record<string, string | undefined>): void;
+    save?(state: unknown): Record<string, unknown>;
+    restore?(state: unknown, saved: Record<string, unknown>): void;
+  };
+  namesTasks?: boolean;
+}
+
+export interface AgentProviderPlugin {
+  id: string;
+  meta: ProviderMeta;
+  adapter: ProviderAdapter;
+}
+
 export interface OfficePlugin {
   manifest: PluginManifest;
   init?(ctx?: unknown): Promise<void> | void;
@@ -137,4 +235,5 @@ export interface OfficePlugin {
   issuesAdapter?: IssuesAdapter;
   queueAdapter?: QueueAdapter;
   servicesProvider?: ServicesProvider;
+  agentProvider?: AgentProviderPlugin;
 }
