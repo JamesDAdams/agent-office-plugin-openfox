@@ -98,10 +98,17 @@ export class OpenFoxClient {
   }
 
   async createProject(name: string, workdir: string): Promise<OpenFoxProject | null> {
-    return await this.fetchJson<OpenFoxProject>('/api/projects', {
-      method: 'POST',
-      body: JSON.stringify({ name, workdir }),
-    });
+    const data = await this.fetchJson<{ project?: OpenFoxProject; data?: OpenFoxProject } | OpenFoxProject>(
+      '/api/projects',
+      {
+        method: 'POST',
+        body: JSON.stringify({ name, workdir }),
+      },
+    );
+    if (!data) return null;
+    if ('project' in data && data.project) return data.project;
+    if ('data' in data && data.data) return data.data;
+    return data as OpenFoxProject;
   }
 
   async getTasks(projectId: string): Promise<OpenFoxTask[]> {

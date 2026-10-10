@@ -4,6 +4,8 @@ export const OPENFOX_PROVIDER_META: ProviderMeta = {
   label: 'OpenFox',
   name: 'OpenFox',
   bin: 'openfox',
+  bins: ['openfox', 'agent'],
+  matchesCommand: (cmd: string) => /openfox/i.test(cmd) || /(?:^|[/\\])agent(\.js)?$/i.test(cmd),
   unpicked: 'OpenFox agents use the model configured in OpenFox settings.',
   usage: {
     reports: true,

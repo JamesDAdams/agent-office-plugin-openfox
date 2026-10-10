@@ -274,3 +274,137 @@ test('OpenFox plugin parses compact table format and includes commands', async (
     await rm(testDir, { recursive: true, force: true });
   }
 });
+
+test('OpenFox provider metadata is complete and guarantees no model/effort fields', async () => {
+  const { OPENFOX_PROVIDER_META } = await import('../src/agent-provider.js');
+  assert.equal(OPENFOX_PROVIDER_META.name, 'OpenFox');
+  assert.equal(OPENFOX_PROVIDER_META.label, 'OpenFox');
+  assert.equal(OPENFOX_PROVIDER_META.bin, 'openfox');
+  assert.ok(Array.isArray(OPENFOX_PROVIDER_META.bins));
+  assert.ok(OPENFOX_PROVIDER_META.bins.includes('openfox'));
+  assert.ok(OPENFOX_PROVIDER_META.bins.includes('agent'));
+
+  // Test command matcher
+  assert.equal(typeof OPENFOX_PROVIDER_META.matchesCommand, 'function');
+  assert.ok(OPENFOX_PROVIDER_META.matchesCommand('/Users/me/openfox-plugins/openfox-agent-office/dist/agent.js'));
+  assert.ok(OPENFOX_PROVIDER_META.matchesCommand('agent.js'));
+  assert.ok(OPENFOX_PROVIDER_META.matchesCommand('openfox'));
+  assert.ok(OPENFOX_PROVIDER_META.matchesCommand('/usr/local/bin/openfox'));
+  assert.equal(OPENFOX_PROVIDER_META.matchesCommand('/usr/local/bin/claude'), false);
+  assert.equal(OPENFOX_PROVIDER_META.matchesCommand('codex'), false);
+
+  // CRITICAL REGRESSION TEST: models and takesEffort MUST be undefined
+  // so that Agent Office UI hides Model and Effort dropdowns for OpenFox
+  assert.equal(OPENFOX_PROVIDER_META.models, undefined, 'OpenFox must NOT declare models');
+  assert.equal(OPENFOX_PROVIDER_META.takesEffort, undefined, 'OpenFox must NOT declare takesEffort');
+});
+
+test('cleanServiceName cleans status suffixes and task tags accurately', async () => {
+  const { cleanServiceName } = await import('../src/services.js');
+  assert.equal(cleanServiceName('Dev Server (Stopped)'), 'Dev Server');
+  assert.equal(cleanServiceName('Dev Server (Running)'), 'Dev Server');
+  assert.equal(cleanServiceName('openfox › dev (Stopped)'), 'openfox › dev');
+  assert.equal(cleanServiceName('openfox › dev (Running)'), 'openfox › dev');
+  assert.equal(cleanServiceName('agent-office › build [task] (Ready)'), 'agent-office › build');
+  assert.equal(cleanServiceName(undefined), undefined);
+});
+
+test('OpenFox ServicesProvider startService, stopService, getServiceLogs invoke correct endpoints', async () => {
+  const calls: string[] = [];
+  const fake = await fakeOpenFox({
+    'POST /api/dev-server/start': { success: true },
+    'POST /api/dev-server/stop': { success: true },
+    'GET /api/dev-server/logs': { logs: ['log line 1', 'log line 2'] },
+  });
+  fake.server.on('request', (req) => {
+    calls.push(`${req.method} ${req.url?.split('?')[0]}`);
+  });
+  process.env.OPENFOX_PORT = String(fake.port);
+
+  try {
+    const plugin = createOpenFoxPlugin();
+    assert.ok(plugin.servicesProvider);
+
+    // Single dev server (no multi-repo config file)
+    await plugin.servicesProvider.startService?.({ id: 'p1', dir: '/test/single' } as any);
+    assert.ok(calls.includes('POST /api/dev-server/start'));
+
+    await plugin.servicesProvider.stopService?.({ id: 'p1', dir: '/test/single' } as any);
+    assert.ok(calls.includes('POST /api/dev-server/stop'));
+
+    const logs = await plugin.servicesProvider.getServiceLogs?.({ id: 'p1', dir: '/test/single' } as any);
+    assert.deepEqual(logs, ['log line 1', 'log line 2']);
+  } finally {
+    delete process.env.OPENFOX_PORT;
+    await fake.close();
+  }
+});
+
+test('OpenFox FloorProvider decorates floor info and creates floors', async () => {
+  const fake = await fakeOpenFox({
+    'POST /api/projects': { project: { id: 'p-new', name: 'my-project', workdir: '/path/my-project' } },
+  });
+  process.env.OPENFOX_PORT = String(fake.port);
+
+  try {
+    const plugin = createOpenFoxPlugin();
+    assert.ok(plugin.floorProvider);
+
+    // decorateFloorInfo sets externalId, url, and clears repo
+    const info: any = { id: 'p1', name: 'p1', repo: 'owner/repo' };
+    plugin.floorProvider.decorateFloorInfo?.({ id: 'p1', dir: '/test' } as any, info);
+    assert.equal(info.externalId, 'p1');
+    assert.equal(info.repo, undefined);
+    assert.ok(info.url.includes('/p/p1/new'));
+
+    // createFloor calls API
+    const res = await plugin.floorProvider.createFloor?.({ repo: 'owner/new-repo', dir: '/tmp/new-repo' });
+    assert.ok(res);
+    assert.equal(res.name, 'my-project');
+    assert.equal(res.dir, '/path/my-project');
+  } finally {
+    delete process.env.OPENFOX_PORT;
+    await fake.close();
+  }
+});
+
+test('OpenFox QueueAdapter lists and deletes tasks', async () => {
+  const deletedTasks: string[] = [];
+  const fake = await fakeOpenFox({
+    'GET /api/projects/p1/tasks': {
+      tasks: [
+        { id: 't1', title: 'Task Todo', prompt: 'prompt 1', status: 'todo' },
+        { id: 't2', title: 'Task Running', prompt: 'prompt 2', status: 'in_progress', boundSessionId: 'sess-1' },
+        { id: 't3', title: 'Task Done', prompt: 'prompt 3', status: 'done' },
+      ],
+    },
+    'DELETE /api/projects/p1/tasks/t1': { success: true },
+  });
+  fake.server.on('request', (req) => {
+    if (req.method === 'DELETE') deletedTasks.push(req.url ?? '');
+  });
+  process.env.OPENFOX_PORT = String(fake.port);
+
+  try {
+    const { OpenFoxQueueAdapter } = await import('../src/queue.js');
+    const { OpenFoxClient } = await import('../src/client.js');
+    const client = new OpenFoxClient();
+    const adapter = new OpenFoxQueueAdapter(client);
+
+    const tasks = await adapter.listTasks({ id: 'p1', dir: '/code' } as any);
+    assert.equal(tasks.length, 3);
+    assert.equal(tasks[0]?.id, 't1');
+    assert.equal(tasks[0]?.status, 'queued');
+    assert.equal(tasks[1]?.id, 't2');
+    assert.equal(tasks[1]?.status, 'running');
+    assert.equal(tasks[1]?.workerId, 'sess-1');
+    assert.equal(tasks[2]?.id, 't3');
+    assert.equal(tasks[2]?.status, 'done');
+
+    await adapter.onTaskDeleted({ id: 'p1', dir: '/code' } as any, 't1');
+    assert.ok(deletedTasks.some((u) => u.includes('/api/projects/p1/tasks/t1')));
+  } finally {
+    delete process.env.OPENFOX_PORT;
+    await fake.close();
+  }
+});

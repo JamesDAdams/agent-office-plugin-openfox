@@ -157,6 +157,8 @@ export interface ProviderMeta {
   label: string;
   name: string;
   bin?: string;
+  bins?: readonly string[];
+  matchesCommand?: (cmd: string) => boolean;
   validModel?: (value: unknown) => value is string;
   invalidModel?: string;
   models?: ModelField;
